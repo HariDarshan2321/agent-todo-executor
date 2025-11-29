@@ -109,7 +109,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t px-6 py-2 text-xs text-muted-foreground flex items-center justify-between">
         <span>
-          Built for Libra Tech AI assessment
+          TODO Executor Agent v1.0
         </span>
         <span>
           Session: {sessionId?.slice(0, 8) || "Not started"}

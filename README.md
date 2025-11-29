@@ -1,6 +1,6 @@
 # TODO Executor Agent
 
-> An AI-powered task execution system with real-time streaming, built for the Libra Tech AI Senior Full Stack Engineer assessment.
+> An AI-powered task execution system with real-time streaming, demonstrating modern agent architecture patterns.
 
 ![Architecture](https://img.shields.io/badge/Architecture-LangGraph-blue)
 ![Frontend](https://img.shields.io/badge/Frontend-Next.js%2014-black)
@@ -377,4 +377,4 @@ MIT
 
 ## Contact
 
-Built by [Your Name] for Libra Tech AI assessment.
+Built by Hari Darshan.
