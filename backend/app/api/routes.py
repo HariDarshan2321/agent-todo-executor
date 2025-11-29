@@ -13,6 +13,14 @@ import uuid
 from datetime import datetime
 from typing import AsyncGenerator
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
@@ -29,9 +37,11 @@ from ..core.config import get_settings, Settings
 
 router = APIRouter()
 
-# Global agent instance (initialized on startup)
+# Global agent instance (initialized lazily on first request)
+# Reset by restarting server or modifying this file
 _agent = None
 _event_queues: dict[str, asyncio.Queue] = {}
+_agent_initialized = False
 
 
 async def get_agent():
@@ -146,7 +156,7 @@ async def stream_execution(
 
                     yield {
                         "event": event["event"],
-                        "data": json.dumps(event["data"])
+                        "data": json.dumps(event["data"], cls=DateTimeEncoder)
                     }
 
                     # Check if execution is complete
