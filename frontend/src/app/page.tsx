@@ -67,13 +67,15 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <a
-            href="/docs"
+            href="http://localhost:8000/docs"
+            target="_blank"
+            rel="noopener noreferrer"
             className="hover:text-foreground transition-colors"
           >
             API Docs
           </a>
           <a
-            href="https://github.com"
+            href="https://github.com/HariDarshan2321/agent-todo-executor"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-foreground transition-colors"

@@ -11,6 +11,7 @@ export type TaskStatus =
 
 export type ExecutionPhase =
   | "idle"
+  | "connecting"
   | "analyzing"
   | "planning"
   | "executing"

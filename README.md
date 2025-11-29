@@ -65,7 +65,7 @@ This project demonstrates a modern AI agent architecture that:
 | Layer | Technology | Why |
 |-------|------------|-----|
 | **Agent** | LangGraph | Graph-based state machine with built-in checkpointing, streaming |
-| **LLM** | OpenAI gpt-4o-mini | Cost-efficient, fast, reliable structured output |
+| **LLM** | OpenAI gpt-4.1-mini | Cost-efficient, fast, reliable structured output |
 | **Backend** | FastAPI | Async-first, auto-generated OpenAPI docs, SSE support |
 | **Frontend** | Next.js 14 | App Router, React Server Components, great DX |
 | **UI** | Shadcn + Tailwind | Accessible, customizable, modern design |

@@ -32,6 +32,8 @@ export function getStatusColor(status: string): string {
 
 export function getPhaseColor(phase: string): string {
   switch (phase) {
+    case "connecting":
+      return "bg-indigo-500/10 text-indigo-500 border-indigo-500/20";
     case "analyzing":
       return "bg-purple-500/10 text-purple-500 border-purple-500/20";
     case "planning":

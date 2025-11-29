@@ -15,24 +15,37 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export function useSSE(sessionId: string | null, goal: string | null) {
   const eventSourceRef = useRef<EventSource | null>(null);
-  const hasConnectedRef = useRef(false);
+  const lastSessionRef = useRef<string | null>(null);
 
   // Get store functions once - they're stable
   const handleSSEEvent = useExecutorStore((state) => state.handleSSEEvent);
   const setConnected = useExecutorStore((state) => state.setConnected);
   const setError = useExecutorStore((state) => state.setError);
   const setLoading = useExecutorStore((state) => state.setLoading);
+  const setPhase = useExecutorStore((state) => state.setPhase);
 
   // Connect to SSE when sessionId and goal are available
   useEffect(() => {
-    // Skip if no session/goal or already connected
-    if (!sessionId || !goal || hasConnectedRef.current) {
+    // Skip if no session/goal
+    if (!sessionId || !goal) {
       return;
     }
 
-    // Mark as connecting
-    hasConnectedRef.current = true;
+    // Skip if already connected to this session
+    if (lastSessionRef.current === sessionId && eventSourceRef.current) {
+      return;
+    }
+
+    // Close previous connection if any
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    // Mark as connecting to this session
+    lastSessionRef.current = sessionId;
     setLoading(true);
+    setPhase("connecting");
 
     // Build SSE URL with goal as query param
     const url = `${API_BASE}/api/stream/${sessionId}?goal=${encodeURIComponent(goal)}`;
@@ -89,9 +102,8 @@ export function useSSE(sessionId: string | null, goal: string | null) {
       console.log("Closing SSE connection");
       eventSource.close();
       setConnected(false);
-      hasConnectedRef.current = false;
     };
-  }, [sessionId, goal, handleSSEEvent, setConnected, setError, setLoading]);
+  }, [sessionId, goal, handleSSEEvent, setConnected, setError, setLoading, setPhase]);
 
   // Manual disconnect function
   const disconnect = useCallback(() => {
@@ -99,7 +111,7 @@ export function useSSE(sessionId: string | null, goal: string | null) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
       setConnected(false);
-      hasConnectedRef.current = false;
+      lastSessionRef.current = null;
     }
   }, [setConnected]);
 
