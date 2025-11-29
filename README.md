@@ -220,11 +220,33 @@ Accept: text/event-stream
 GET /api/session/{session_id}
 ```
 
+### List All Sessions
+```http
+GET /api/sessions
+```
+
+### Resume Session (Bonus)
+```http
+POST /api/session/{session_id}/resume
+Content-Type: application/json
+
+{
+  "user_input": "Optional context for resuming tasks"
+}
+```
+
+### Pause Execution (Bonus)
+```http
+POST /api/session/{session_id}/pause
+```
+
 Full API documentation: http://localhost:8000/docs
 
 ---
 
 ## Example Session Transcript
+
+### Session 1: Initial Execution
 
 **User Input:**
 ```
@@ -254,6 +276,50 @@ Starting execution...
 [10:30:05] [select_task] → task_selected - Selected task: Build features section
 ...
 [10:30:15] [complete] → execution_complete - Finished: 5/5 tasks completed
+```
+
+### Session 2: Resume with Failed Tasks (Bonus Feature)
+
+**Scenario:** User pauses execution after 2 tasks, then resumes with context.
+
+**Initial Execution:**
+```
+[10:40:01] [plan_todos] → Created 4 tasks
+[10:40:02] [execute_task] → Completed: Research competitors
+[10:40:05] [execute_task] → Completed: Draft homepage copy
+[10:40:06] USER PAUSES EXECUTION
+```
+
+**Session Saved:**
+```json
+{
+  "session_id": "sess-abc123",
+  "goal": "Create marketing website",
+  "tasks": [
+    {"id": "1", "title": "Research competitors", "status": "completed"},
+    {"id": "2", "title": "Draft homepage copy", "status": "completed"},
+    {"id": "3", "title": "Design mockups", "status": "pending"},
+    {"id": "4", "title": "Build responsive layout", "status": "pending"}
+  ]
+}
+```
+
+**User Resumes with Context:**
+```
+POST /api/session/sess-abc123/resume
+{
+  "user_input": "Focus on mobile-first design for the remaining tasks"
+}
+```
+
+**Resumed Execution Trace:**
+```
+[11:15:01] [resume] → Session restored with 2 pending tasks
+[11:15:01] [select_task] → Selected: Design mockups (with mobile-first context)
+[11:15:03] [execute_task] → Completed with mobile optimization
+[11:15:04] [select_task] → Selected: Build responsive layout
+[11:15:06] [execute_task] → Completed
+[11:15:07] [complete] → All 4 tasks completed
 ```
 
 ---
@@ -377,4 +443,4 @@ MIT
 
 ## Contact
 
-Built by Hari Darshan.
+Built by Darshan.

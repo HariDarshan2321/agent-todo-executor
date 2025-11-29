@@ -195,13 +195,14 @@ Rules:
 
     async def execute_task(self, state: AgentState) -> dict:
         """
-        Execute the current task.
+        Execute the current task using LLM to generate real output.
 
-        In this demo, we simulate task execution with delays.
-        In production, this could call real tools/APIs.
+        The agent generates actual content/deliverables for each task
+        based on the task description and overall goal.
         """
         task_index = state["current_task_index"]
         tasks = state["tasks"]
+        goal = state.get("goal", "")
 
         if task_index < 0 or task_index >= len(tasks):
             return {"error": "Invalid task index"}
@@ -219,15 +220,34 @@ Rules:
         task["status"] = TaskStatus.IN_PROGRESS.value
         task["started_at"] = datetime.utcnow().isoformat()
 
-        # Simulate execution with delay (1-3 seconds)
-        await asyncio.sleep(random.uniform(1, 3))
+        try:
+            # Generate real output using LLM
+            prompt = ChatPromptTemplate.from_messages([
+                SystemMessage(content="""You are an expert task executor. Execute the given task and provide a concrete, actionable output.
 
-        # Simulate success/failure (90% success rate for demo)
-        success = random.random() < 0.9
+Your response should be the ACTUAL DELIVERABLE for this task - not just a description of what to do.
 
-        if success:
+For example:
+- If the task is "Write a headline", output the actual headline text
+- If the task is "Create HTML structure", output the actual HTML code
+- If the task is "Define color scheme", output the actual colors (hex codes)
+- If the task is "Write copy", output the actual text content
+
+Be specific and provide real, usable output. Keep responses concise but complete (under 500 characters).
+Format code blocks with triple backticks if providing code."""),
+                HumanMessage(content=f"""Goal: {goal}
+
+Task to execute: {task['title']}
+Description: {task['description']}
+
+Please execute this task and provide the actual output/deliverable:""")
+            ])
+
+            response = await self.llm.ainvoke(prompt.format_messages())
+            result_content = response.content.strip()
+
             task["status"] = TaskStatus.COMPLETED.value
-            task["result"] = f"Successfully completed: {task['title']}"
+            task["result"] = result_content
             task["completed_at"] = datetime.utcnow().isoformat()
 
             trace_complete = create_trace(
@@ -235,17 +255,18 @@ Rules:
                 action="execution_success",
                 message=f"Completed: {task['title']}",
                 task_id=task["id"],
-                details={"duration_simulated": True}
+                details={"output_length": len(result_content)}
             )
-        else:
+
+        except Exception as e:
             task["status"] = TaskStatus.FAILED.value
-            task["error"] = "Simulated failure for demonstration"
+            task["error"] = f"Execution failed: {str(e)}"
             task["completed_at"] = datetime.utcnow().isoformat()
 
             trace_complete = create_trace(
                 node="execute_task",
                 action="execution_failed",
-                message=f"Failed: {task['title']} - Simulated failure",
+                message=f"Failed: {task['title']} - {str(e)}",
                 task_id=task["id"]
             )
 

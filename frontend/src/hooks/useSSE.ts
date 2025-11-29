@@ -5,6 +5,7 @@
  * - Automatic reconnection
  * - Event parsing following AG-UI protocol
  * - Connection state management
+ * - View-only mode support (prevents auto-execution)
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -13,9 +14,10 @@ import { SSEEventType } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export function useSSE(sessionId: string | null, goal: string | null) {
+export function useSSE(sessionId: string | null, goal: string | null, isResuming: boolean = false, userInput: string | null = null) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastSessionRef = useRef<string | null>(null);
+  const lastResumingRef = useRef<boolean>(false);
 
   // Get store functions once - they're stable
   const handleSSEEvent = useExecutorStore((state) => state.handleSSEEvent);
@@ -23,16 +25,30 @@ export function useSSE(sessionId: string | null, goal: string | null) {
   const setError = useExecutorStore((state) => state.setError);
   const setLoading = useExecutorStore((state) => state.setLoading);
   const setPhase = useExecutorStore((state) => state.setPhase);
+  const setIsResuming = useExecutorStore((state) => state.setIsResuming);
+  const isViewOnly = useExecutorStore((state) => state.isViewOnly);
 
   // Connect to SSE when sessionId and goal are available
   useEffect(() => {
-    // Skip if no session/goal
-    if (!sessionId || !goal) {
+    // NEVER connect if in view-only mode
+    if (isViewOnly) {
+      console.log("View-only mode: skipping SSE connection");
       return;
     }
 
-    // Skip if already connected to this session
-    if (lastSessionRef.current === sessionId && eventSourceRef.current) {
+    // For resuming, we need sessionId and isResuming must be true
+    // For new execution, we need sessionId and goal
+    const shouldConnect = isResuming ? (sessionId && isResuming) : (sessionId && goal && !isViewOnly);
+
+    // Skip if nothing to connect to
+    if (!shouldConnect) {
+      return;
+    }
+
+    // Skip if already connected to this session (unless resuming state changed)
+    if (lastSessionRef.current === sessionId &&
+        lastResumingRef.current === isResuming &&
+        eventSourceRef.current) {
       return;
     }
 
@@ -44,12 +60,21 @@ export function useSSE(sessionId: string | null, goal: string | null) {
 
     // Mark as connecting to this session
     lastSessionRef.current = sessionId;
+    lastResumingRef.current = isResuming;
     setLoading(true);
     setPhase("connecting");
 
-    // Build SSE URL with goal as query param
-    const url = `${API_BASE}/api/stream/${sessionId}?goal=${encodeURIComponent(goal)}`;
-    console.log("Connecting to SSE:", url);
+    // Build SSE URL - use resume endpoint if resuming
+    let url: string;
+    if (isResuming) {
+      url = `${API_BASE}/api/session/${sessionId}/resume`;
+      if (userInput) {
+        url += `?user_input=${encodeURIComponent(userInput)}`;
+      }
+    } else {
+      url = `${API_BASE}/api/stream/${sessionId}?goal=${encodeURIComponent(goal || "")}`;
+    }
+    console.log("Connecting to SSE:", url, isResuming ? "(resuming)" : "");
 
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
@@ -90,6 +115,7 @@ export function useSSE(sessionId: string | null, goal: string | null) {
           if (eventType === "complete" || eventType === "error") {
             eventSource.close();
             setConnected(false);
+            setIsResuming(false);
           }
         } catch (e) {
           console.error("Failed to parse SSE event:", e);
@@ -103,7 +129,7 @@ export function useSSE(sessionId: string | null, goal: string | null) {
       eventSource.close();
       setConnected(false);
     };
-  }, [sessionId, goal, handleSSEEvent, setConnected, setError, setLoading, setPhase]);
+  }, [sessionId, goal, isResuming, isViewOnly, userInput, handleSSEEvent, setConnected, setError, setLoading, setPhase, setIsResuming]);
 
   // Manual disconnect function
   const disconnect = useCallback(() => {

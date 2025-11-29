@@ -202,12 +202,16 @@ class TodoExecutorGraph:
             result = await compiled.ainvoke(initial_state, config)
             yield result
 
-    async def resume(self, session_id: str):
+    async def resume(self, session_id: str, user_input: str = None):
         """
-        Resume execution from a checkpoint.
+        Resume execution from a checkpoint with optional human input.
+
+        This supports human-in-the-loop workflows where users can provide
+        additional context or instructions when resuming a paused session.
 
         Args:
             session_id: The session to resume
+            user_input: Optional user input to provide context for the next task
 
         Yields:
             State updates as the agent continues
@@ -219,9 +223,19 @@ class TodoExecutorGraph:
         state = await compiled.aget_state(config)
 
         if state and state.values:
-            # Update pause flag and continue
+            # Build update with user input if provided
+            update = {"is_paused": False}
+            if user_input:
+                # Add user input to messages for context
+                current_messages = state.values.get("messages", [])
+                from langchain_core.messages import HumanMessage
+                new_message = HumanMessage(content=user_input)
+                update["messages"] = current_messages + [new_message]
+                update["human_input"] = user_input  # Store for task execution
+
+            # Continue execution with updates
             async for event in compiled.astream(
-                {"is_paused": False},
+                update,
                 config,
                 stream_mode="updates"
             ):
@@ -233,6 +247,34 @@ class TodoExecutorGraph:
         config = {"configurable": {"thread_id": session_id}}
         state = await compiled.aget_state(config)
         return state.values if state else None
+
+    async def list_sessions(self) -> list[dict]:
+        """List all available sessions from the checkpointer."""
+        if not self.checkpointer:
+            return []
+
+        sessions = []
+        try:
+            # Query unique thread_ids from the checkpoints table
+            async with self.checkpointer.conn.execute(
+                "SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id DESC LIMIT 50"
+            ) as cursor:
+                rows = await cursor.fetchall()
+                for row in rows:
+                    session_id = row[0]
+                    state = await self.get_state(session_id)
+                    if state:
+                        sessions.append({
+                            "session_id": session_id,
+                            "goal": state.get("goal", ""),
+                            "phase": state.get("phase", "unknown"),
+                            "task_count": len(state.get("tasks", [])),
+                            "completed_count": len([t for t in state.get("tasks", []) if t.get("status") == "completed"])
+                        })
+        except Exception as e:
+            print(f"Error listing sessions: {e}")
+
+        return sessions
 
 
 async def create_agent(

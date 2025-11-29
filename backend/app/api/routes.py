@@ -255,6 +255,22 @@ async def run_agent(session_id: str, goal: str, agent, queue: asyncio.Queue):
         })
 
 
+@router.get("/sessions", response_model=list[SessionListItem])
+async def list_sessions(agent=Depends(get_agent)):
+    """List all available sessions for resume."""
+    sessions = await agent.list_sessions()
+    return [
+        SessionListItem(
+            session_id=s["session_id"],
+            goal=s["goal"],
+            phase=s["phase"],
+            task_count=s["task_count"],
+            completed_count=s["completed_count"]
+        )
+        for s in sessions
+    ]
+
+
 @router.get("/session/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: str, agent=Depends(get_agent)):
     """Get the current state of a session."""
@@ -282,25 +298,119 @@ async def pause_session(session_id: str, agent=Depends(get_agent)):
     return {"status": "paused", "session_id": session_id}
 
 
-@router.post("/session/{session_id}/resume")
-async def resume_session(session_id: str, agent=Depends(get_agent)):
-    """Resume execution of a paused session."""
-    if session_id not in _event_queues:
-        _event_queues[session_id] = asyncio.Queue(maxsize=100)
+@router.get("/session/{session_id}/resume")
+async def resume_session_stream(
+    session_id: str,
+    user_input: str = None,
+    agent=Depends(get_agent)
+):
+    """
+    SSE endpoint to resume execution of a session with pending tasks.
 
-    asyncio.create_task(resume_agent(session_id, agent, _event_queues[session_id]))
-    return {"status": "resuming", "session_id": session_id}
+    Supports human-in-the-loop by accepting optional user_input parameter
+    that will be passed to the next task execution for context.
+
+    This streams the continued execution like the main stream endpoint.
+    """
+    async def event_generator() -> AsyncGenerator[dict, None]:
+        # Create queue for this session
+        if session_id not in _event_queues:
+            _event_queues[session_id] = asyncio.Queue(maxsize=100)
+
+        queue = _event_queues[session_id]
+
+        try:
+            # Send initial connection event
+            yield {
+                "event": "connected",
+                "data": json.dumps({
+                    "session_id": session_id,
+                    "resuming": True,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+            }
+
+            # Start resume in background with optional user input
+            asyncio.create_task(resume_agent(session_id, agent, queue, user_input))
+
+            # Stream events from queue
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+
+                    yield {
+                        "event": event["event"],
+                        "data": json.dumps(event["data"], cls=DateTimeEncoder)
+                    }
+
+                    if event["event"] in ("complete", "error"):
+                        break
+
+                except asyncio.TimeoutError:
+                    yield {
+                        "event": "ping",
+                        "data": json.dumps({"timestamp": datetime.utcnow().isoformat()})
+                    }
+
+        finally:
+            if session_id in _event_queues:
+                del _event_queues[session_id]
+
+    return EventSourceResponse(event_generator())
 
 
-async def resume_agent(session_id: str, agent, queue: asyncio.Queue):
-    """Resume agent execution from checkpoint."""
+async def resume_agent(session_id: str, agent, queue: asyncio.Queue, user_input: str = None):
+    """Resume agent execution from checkpoint with optional user input."""
     try:
-        async for update in agent.resume(session_id):
+        # Send phase change
+        await queue.put({
+            "event": "phase_change",
+            "data": {"phase": "executing", "session_id": session_id}
+        })
+
+        # If user provided input, add it as a message
+        if user_input:
+            await queue.put({
+                "event": "message",
+                "data": {
+                    "role": "user",
+                    "content": user_input,
+                    "session_id": session_id
+                }
+            })
+
+        async for update in agent.resume(session_id, user_input=user_input):
             for node_name, node_output in update.items():
                 await queue.put({
                     "event": "node_end",
                     "data": {"node": node_name, "session_id": session_id}
                 })
+
+                if "tasks" in node_output:
+                    await queue.put({
+                        "event": "tasks_update",
+                        "data": {"tasks": node_output["tasks"], "session_id": session_id}
+                    })
+
+                if "phase" in node_output:
+                    await queue.put({
+                        "event": "phase_change",
+                        "data": {"phase": node_output["phase"], "session_id": session_id}
+                    })
+
+                if "traces" in node_output:
+                    for trace in node_output["traces"]:
+                        await queue.put({
+                            "event": "trace",
+                            "data": {"trace": trace, "session_id": session_id}
+                        })
+
+                if "messages" in node_output:
+                    for msg in node_output["messages"]:
+                        await queue.put({
+                            "event": "message",
+                            "data": {"role": "assistant", "content": msg.content, "session_id": session_id}
+                        })
 
         await queue.put({
             "event": "complete",
