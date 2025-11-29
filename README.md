@@ -435,12 +435,6 @@ agent-todo-executor/
 
 ---
 
-## License
-
-MIT
-
----
-
 ## Contact
 
 Built by Darshan.
