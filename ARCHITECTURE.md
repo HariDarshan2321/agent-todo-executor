@@ -444,5 +444,3 @@ This project implements the **Plan-and-Execute** agent pattern:
 This project uses Plan-and-Execute because tasks are independent and benefit from upfront structured planning.
 
 ---
-
-*Built by Darshan T M for Libra Technical Assessment*
